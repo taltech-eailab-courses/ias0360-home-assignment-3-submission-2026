@@ -1,0 +1,6 @@
+[submodule "lcd/lib/pico-tflmicro"]
+	path = lcd/lib/pico-tflmicro
+	url = git@github.com:raspberrypi/pico-tflmicro.git
+[submodule "imu/lib/pico-tflmicro"]
+	path = imu/lib/pico-tflmicro
+	url = git@github.com:raspberrypi/pico-tflmicro.git

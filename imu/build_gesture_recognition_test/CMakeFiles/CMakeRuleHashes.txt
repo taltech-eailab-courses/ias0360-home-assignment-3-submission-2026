@@ -1,0 +1,18 @@
+# Hashes of file build rules.
+19a7ea1b5fe8c6a840d857b81d47aa87 CMakeFiles/gesture_recognition_test_ws2812_pio_h
+9947696043ebb683bd864ff1bc3e0ddf lib/sd_card_driver/CMakeFiles/sd_custom_driver_rp2040_sdio_pio_h
+b66bfc7db9e7db1ad887361c4a1495a3 lib/sd_card_driver/rp2040_sdio.pio.h
+d6ee1388d472c0798c672c616f632a0b pico-sdk/src/rp2040/boot_stage2/CMakeFiles/bs2_default_bin
+9bfd7c8474b8186e1501bd0c0ce20552 pico-sdk/src/rp2040/boot_stage2/bs2_default.bin
+e911ae0da8be40b6ec7e55a6d546eb66 pico-sdk/src/rp2040/boot_stage2/bs2_default_padded_checksummed.S
+7530833c7c6634dad388a31b0bfb5b76 pico-sdk/src/rp2_common/pico_cyw43_driver/CMakeFiles/cyw43_driver_picow_cyw43_bus_pio_spi_pio_h
+d0618cc9cf19cbbfec61c25fe0c40c5e pico-sdk/src/rp2_common/pico_cyw43_driver/CMakeFiles/pioasmBuild-complete
+c2320366362b9c20b1cbf7bb896e292f pico-sdk/src/rp2_common/pico_cyw43_driver/cyw43_bus_pio_spi.pio.h
+f8aa157baed8ae403fd934c802266a3c pico-sdk/src/rp2_common/pico_cyw43_driver/pioasm/src/pioasmBuild-stamp/pioasmBuild-configure
+f5ed5a1e694968e5a6e22206cf45701e pico-sdk/src/rp2_common/pico_cyw43_driver/pioasm/src/pioasmBuild-stamp/pioasmBuild-download
+8543c30d1f070c8f9063bb6d2001e343 pico-sdk/src/rp2_common/pico_cyw43_driver/pioasm/src/pioasmBuild-stamp/pioasmBuild-mkdir
+4929887e01b79df62933998dd56a6b01 pico-sdk/src/rp2_common/pico_cyw43_driver/pioasm/src/pioasmBuild-stamp/pioasmBuild-patch
+5bdc2b86d7bc44e67609d671d2ba6f65 pico-sdk/src/rp2_common/pico_cyw43_driver/pioasm/src/pioasmBuild-stamp/pioasmBuild-update
+54d40f60b6e150b440aa0951d32c37cb pico-sdk/src/rp2_common/pico_status_led/CMakeFiles/pico_status_led_ws2812_pio_h
+81530aeffea2000255fff20cb4cec055 pico-sdk/src/rp2_common/pico_status_led/ws2812.pio.h
+dac5aafd810f028e976311f0db250696 ws2812.pio.h
