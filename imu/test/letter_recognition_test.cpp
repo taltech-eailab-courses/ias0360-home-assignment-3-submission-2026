@@ -31,13 +31,19 @@ extern "C" {
 #define REQUEST_ID "251488IAXD"
 #define NUM_CHARACTER 5
 
-// Samples travel from core 0 (IMU sampling) to core 1 (processing / storage) through this queue.
-#define SAMPLE_PERIOD_US 10000   // 100 Hz
-#define IMU_READ_TIMEOUT_US 2000
+// Recording, as in the data collection of lab_0_1.cpp / the notebook: the accelerometer is polled back to back
+// (about 2 kHz, imuDataAccGyrGet() = imuDataOnlyGet() of lab_0_1) into RAM. The first STATIONARY_US are taken
+// while the board is still and are the "stationary prefix" of the notebook. The trajectory is computed after the
+// character is finished, because the notebook's drift correction needs the whole recording.
+#define STATIONARY_US 200000       // stationary prefix (0.2 s in the notebook)
 #define PREPARE_SECONDS 2          // hold-still countdown before every character
-#define WRITE_PROMPT_SAMPLE 30     // after about 0.3 s of stillness the screen says "Write now!"
-#define SAMPLE_QUEUE_DEPTH 128
+#define OUTPUT_RATE_HZ 100         // the stored / uploaded trajectory is decimated to about this rate
+#define CAPTURE_QUEUE_DEPTH 8
 
+// Cutoff of the acceleration low-pass (50 Hz in the notebook); override with -DAW_LPF_CUTOFF_HZ=<hz>.
+#ifndef AW_LPF_CUTOFF_HZ
+#define AW_LPF_CUTOFF_HZ 50
+#endif
 
 const uint32_t MAX_DATA_COLLECTION_TIME_US = 3 * 1000 * 1000; // 3 seconds
 
@@ -55,15 +61,29 @@ static inline void debug_unpause_timer(void) {
 // breaks double arguments (printf "%f") and soft-float maths on this core.
 static uint32_t core1_stack[4096] __attribute__((aligned(8)));   // 16 KB
 
-static queue_t sample_queue;
-static volatile uint32_t dropped_samples = 0;
+// Core 0 fills raw_samples, then hands the character over to core 1 through capture_queue; core 0 does not touch
+// the buffers again before core 1 has finished the character (chars_finished).
+enum { MSG_CHAR_CAPTURED = 1, MSG_SESSION_END };
+typedef struct {
+    uint8_t type;
+    uint8_t char_index;
+    uint8_t char_count;
+    uint32_t session_id;
+    uint32_t sample_count;       // stationary prefix + gesture
+    uint32_t prefix_count;
+    float sample_rate_hz;        // measured rate of the gesture samples
+} CaptureMsg;
+
+static queue_t capture_queue;
+static int16_t raw_samples[kMaxRecordingSamples][3];    // ax, ay, az in counts
+static float positions[kMaxRecordingSamples][3];        // x, y, z in metres, gesture part only
 static volatile uint32_t chars_finished = 0;   // characters fully handled (file closed) by core 1
 
 // Constructed without touching the hardware; mounted on core 0 in main() before core 1 starts.
 static SD_CardWrapper sd_card(SD_CardWrapper::NoHalt{});
 
-// Which SD step failed (1 mount, 2 mkdir, 3 open, 4 write, 5 close); reported with the FatFs result.
-enum { STEP_MOUNT = 1, STEP_MKDIR, STEP_OPEN, STEP_WRITE, STEP_CLOSE };
+// Which SD step failed (1 mount, 2 mkdir, 3 open, 4 write, 5 close, 6 estimate); reported with the FatFs result.
+enum { STEP_MOUNT = 1, STEP_MKDIR, STEP_OPEN, STEP_WRITE, STEP_CLOSE, STEP_ESTIMATE };
 static int32_t save_failure = 0;   // step * 100 + FatFs result of the first failure in the session
 
 static void note_failure(int step) {
@@ -86,74 +106,89 @@ static bool open_position_file(uint32_t session_id, uint8_t char_index) {
     return true;
 }
 
-// core1: consumes samples, computes the position and writes every point to the SD card right away,
-// then reports to the UI. Only the estimator state (no history) and one sector buffer use RAM.
+// core1: computes the trajectory of every captured character (same method as the notebook) and writes it to
+// the SD card, then reports to the UI.
 void core1_entry() {
-    PositionEstimator estimator;
-    ImuSample s;
-    bool char_active = false;
-    bool storage_ok = true;
+    CaptureMsg m;
     bool session_failed = false;
-    uint32_t received = 0;
 
     while (true) {
-        queue_remove_blocking(&sample_queue, &s);
+        queue_remove_blocking(&capture_queue, &m);
 
-        if (s.type == SAMPLE_DATA) {
-            if (!char_active) {
-                estimator.reset();
-                storage_ok = open_position_file(s.session_id, s.char_index);
-                char_active = true;
-            }
-            received++;
-            
-            // Every time a new IMU samples is received, estimate the current position relative to its starting point.
-            const PositionPoint p = estimator.update(s);
-            printf("Position point: t_us=%lu, x=%f, y=%f, z=%f\n", (unsigned long)p.t_us, p.x, p.y, p.z);
+        if (m.type == MSG_CHAR_CAPTURED) {
+            bool storage_ok = open_position_file(m.session_id, m.char_index);
+            bool estimate_ok = false;
+
             if (storage_ok) {
-                // Metres (matches the "x_m,y_m,z_m" header): build_trajectory() reads these back with
-                // strtod() when the character is uploaded, so keep this in sync with that format.
-                // 3 decimals = 1 mm resolution, which is enough for hand-drawn trajectories.
-                char line[80];
-                const int n = snprintf(line, sizeof line, "%.3f,%.3f,%.3f\n",
-                                       p.x, p.y, p.z);
-                storage_ok = sd_card.writeStream(line, n);
-                if (!storage_ok) note_failure(STEP_WRITE);
+                // Apply position estimation to the raw IMU samples.
+                estimate_ok = estimate_trajectory(raw_samples, m.sample_count, m.prefix_count, m.sample_rate_hz,
+                                                  (float)AW_LPF_CUTOFF_HZ, positions);
+                if (!estimate_ok) {
+                    if (save_failure == 0) save_failure = STEP_ESTIMATE * 100;
+                    printf("Trajectory estimation failed: %lu samples, %lu stationary, %.1f Hz\n",
+                           (unsigned long)m.sample_count, (unsigned long)m.prefix_count, m.sample_rate_hz);
+                }
             }
-        } else if (s.type == SAMPLE_CHAR_END) {
+
+            if (storage_ok && estimate_ok) {
+                // Downsample the trajectory to the output rate. and write it to the SD card.
+                const uint32_t points = m.sample_count - m.prefix_count;
+                uint32_t stride = (uint32_t)(m.sample_rate_hz / OUTPUT_RATE_HZ + 0.5f);
+                if (stride < 1) stride = 1;
+
+                float min_v[3] = {positions[0][0], positions[0][1], positions[0][2]};
+                float max_v[3] = {min_v[0], min_v[1], min_v[2]};
+                uint32_t written = 0;
+                for (uint32_t k = 0; k < points && storage_ok; k++) {
+                    for (int i = 0; i < 3; i++) {
+                        if (positions[k][i] < min_v[i]) min_v[i] = positions[k][i];
+                        if (positions[k][i] > max_v[i]) max_v[i] = positions[k][i];
+                    }
+                    if (k % stride != 0 && k != points - 1) continue;
+
+                    // Metres in the sensor frame, like the notebook's "position" (matches the "x_m,y_m,z_m"
+                    // header): build_trajectory() reads these back with strtod() when the character is
+                    // uploaded, so keep this in sync with that format.
+                    char line[80];
+                    const int n = snprintf(line, sizeof line, "%.4f,%.4f,%.4f\n",
+                                           positions[k][0], positions[k][1], positions[k][2]);
+                    storage_ok = sd_card.writeStream(line, n);
+                    if (!storage_ok) note_failure(STEP_WRITE);
+                    written++;
+                }
+                printf("Character %u: %lu samples at %.0f Hz, %lu points written, extent x=%.3f y=%.3f z=%.3f m\n",
+                       m.char_index + 1, (unsigned long)m.sample_count, m.sample_rate_hz, (unsigned long)written,
+                       max_v[0] - min_v[0], max_v[1] - min_v[1], max_v[2] - min_v[2]);
+            }
             if (sd_card.isStreamOpen() && !sd_card.closeStream()) {
                 note_failure(STEP_CLOSE);
                 storage_ok = false;
             }
-            char_active = false;
             chars_finished = chars_finished + 1;
 
-            if (storage_ok) {
+            if (storage_ok && estimate_ok) {
                 AppEvent e = {};
                 e.type = EVT_CHARACTER_SAVED;
-                e.char_index = s.char_index;
-                e.char_count = s.char_count;
-                e.session_id = s.session_id;
-                printf("Character %u/%u saved for session %lu\n", s.char_index + 1, s.char_count, (unsigned long)s.session_id);
+                e.char_index = m.char_index;
+                e.char_count = m.char_count;
+                e.session_id = m.session_id;
+                printf("Character %u/%u saved for session %lu\n", m.char_index + 1, m.char_count, (unsigned long)m.session_id);
                 app_post_critical(&e);
             } else {
                 // Reported once, when the whole session is finished and the SPI bus is free again.
                 session_failed = true;
-                printf("Character %u/%u could not be written to the SD card\n", s.char_index + 1, s.char_count);
+                printf("Character %u/%u could not be saved\n", m.char_index + 1, m.char_count);
             }
-        } else if (s.type == SAMPLE_SESSION_END) {
-            printf("Session %lu: %lu samples processed, %lu dropped\n",
-                   (unsigned long)s.session_id, (unsigned long)received, (unsigned long)dropped_samples);
-            received = 0;
-            dropped_samples = 0;
+        } else if (m.type == MSG_SESSION_END) {
+            printf("Session %lu finished\n", (unsigned long)m.session_id);
 
             // Touch scanning was paused during the session (the SD card shares the SPI bus); resume it
             // before the UI is told to redraw.
             inference.state = DEFAULT;
             AppEvent done = {};
             done.char_index = NO_CHAR;
-            done.char_count = s.char_count;
-            done.session_id = s.session_id;
+            done.char_count = m.char_count;
+            done.session_id = m.session_id;
             if (session_failed) {
                 done.type = EVT_ERROR;
                 done.stage = STAGE_SAVE;
@@ -169,69 +204,70 @@ void core1_entry() {
     }
 }
 
-// core0: reads the IMU at a fixed rate and never blocks on the queue
+// Polls the accelerometer back to back for duration_us and appends the samples to raw_samples, like the loop of
+// lab_0_1.cpp. Returns the elapsed time in microseconds.
+static uint32_t record_samples(uint32_t duration_us, uint32_t& count) {
+    IMU_ST_SENSOR_DATA gyro, accel;
+    const uint32_t start_us = time_us_32();
+    uint32_t elapsed_us = 0;
+    while (count < kMaxRecordingSamples && (elapsed_us = time_us_32() - start_us) < duration_us) {
+        imuDataAccGyrGet(&gyro, &accel);
+        raw_samples[count][0] = accel.s16X;
+        raw_samples[count][1] = accel.s16Y;
+        raw_samples[count][2] = accel.s16Z;
+        count++;
+    }
+    return time_us_32() - start_us;
+}
+
+// core0: records the characters
 static void capture_characters(const AppCommand& cmd) {
     // prevent_interaction() makes TP_DrawBoard() skip the touch scan, so core 0 does not use the
     // SPI bus while core 1 writes to the SD card. Reset by core 1 when the session is finished.
     inference.state = PROCESSING;
     chars_finished = 0;
 
-    for (uint8_t count = 0; count < cmd.char_count; count++) {
-        // Core 1 must have closed the previous file before the screen is redrawn.
-        const absolute_time_t wait_until = make_timeout_time_ms(3000);
-        while (chars_finished < count && !time_reached(wait_until)) sleep_ms(5);
+    for (uint8_t index = 0; index < cmd.char_count; index++) {
+        // Core 1 must have finished the previous character before the buffers are reused (it always
+        // counts the character, also when saving fails).
+        while (chars_finished < index) sleep_ms(5);
 
-        // Hold-still countdown: the estimator calibrates on the first samples of every character, so the
-        // board has to be still when sampling starts.
-        APP_ShowCapturePrompt(count, cmd.char_count, "");
+        // Hold-still countdown: the first samples of every character are the stationary prefix.
+        APP_ShowCapturePrompt(index, cmd.char_count, "");
         for (int sec = PREPARE_SECONDS; sec > 0; sec--) {
             char line[24];
             snprintf(line, sizeof line, "Hold still... %d", sec);
-            APP_ShowCapturePrompt(count, cmd.char_count, line);
+            APP_ShowCapturePrompt(index, cmd.char_count, line);
             sleep_ms(1000);
         }
-        APP_ShowCapturePrompt(count, cmd.char_count, "Hold still...");
+        APP_ShowCapturePrompt(index, cmd.char_count, "Hold still...");
 
-        const uint32_t start_us = time_us_32();
-        absolute_time_t next = get_absolute_time();
-        uint32_t taken = 0;
+        uint32_t count = 0;
+        record_samples(STATIONARY_US, count);
+        const uint32_t prefix_count = count;
 
-        while ((uint32_t)(time_us_32() - start_us) < MAX_DATA_COLLECTION_TIME_US) {
-            // One synchronised 12-byte burst (about 1 ms). imuDataGet() is not used: it blocks 10-200 ms
-            // waiting for the magnetometer and averages several reads, which ruins the time base.
-            ImuSample s = {};
-            if (imuRawAccelGyroRead(s.accel, s.gyro, IMU_READ_TIMEOUT_US)) {
-                s.type = SAMPLE_DATA;
-                s.char_index = count;
-                s.char_count = cmd.char_count;
-                s.session_id = cmd.session_id;
-                s.t_us = time_us_32() - start_us;
-                if (!queue_try_add(&sample_queue, &s)) dropped_samples++;
-            } else {
-                dropped_samples++;
-            }
-            if (++taken == WRITE_PROMPT_SAMPLE) APP_ShowCapturePrompt(count, cmd.char_count, "Write now!");
+        // The display update takes a while; the writer is still reacting to the prompt, so the gap between
+        // the prefix and the gesture is still part of the stationary phase.
+        APP_ShowCapturePrompt(index, cmd.char_count, "Write now!");
+        const uint32_t gesture_us = record_samples(MAX_DATA_COLLECTION_TIME_US, count);
 
-            next = delayed_by_us(next, SAMPLE_PERIOD_US);
-            sleep_until(next);
-        }
-
-        ImuSample end = {};
-        end.type = SAMPLE_CHAR_END;
-        end.char_index = count;
-        end.char_count = cmd.char_count;
-        end.session_id = cmd.session_id;
-        queue_add_blocking(&sample_queue, &end);
+        CaptureMsg msg = {};
+        msg.type = MSG_CHAR_CAPTURED;
+        msg.char_index = index;
+        msg.char_count = cmd.char_count;
+        msg.session_id = cmd.session_id;
+        msg.sample_count = count;
+        msg.prefix_count = prefix_count;
+        msg.sample_rate_hz = gesture_us ? (float)(count - prefix_count) * 1e6f / (float)gesture_us : 0.0f;
+        queue_add_blocking(&capture_queue, &msg);
     }
 
-    ImuSample done = {};
-    done.type = SAMPLE_SESSION_END;
+    CaptureMsg done = {};
+    done.type = MSG_SESSION_END;
     done.char_count = cmd.char_count;
     done.session_id = cmd.session_id;
-    queue_add_blocking(&sample_queue, &done);
+    queue_add_blocking(&capture_queue, &done);
 }
-
-
 
 static void post_upload_error(const AppCommand& cmd, uint8_t stage, uint8_t error, int32_t detail, const char* text = "") {
     AppEvent e = {};
@@ -277,10 +313,10 @@ static int build_trajectory(uint32_t session_id, uint8_t char_index, std::string
         }
         if (k == 3) {
             if (points) x.append(",");
-            char num[16];
-            snprintf(num, sizeof num, "%.3f", v[0]); x.append(num); x.append(",");
-            snprintf(num, sizeof num, "%.3f", v[1]); x.append(num); x.append(",");
-            snprintf(num, sizeof num, "%.3f", v[2]); x.append(num);
+            char num[24];
+            snprintf(num, sizeof num, "%.4f", v[0]); x.append(num); x.append(",");
+            snprintf(num, sizeof num, "%.4f", v[1]); x.append(num); x.append(",");
+            snprintf(num, sizeof num, "%.4f", v[2]); x.append(num);
             points++;
         }
         while (p < end && *p != '\n') p++;
@@ -396,9 +432,9 @@ int main(void)
         printf("SD card mount failed (%d), recordings will not be saved\n", sd_result);
     }
 
-    queue_init(&sample_queue, sizeof(ImuSample), SAMPLE_QUEUE_DEPTH);
+    queue_init(&capture_queue, sizeof(CaptureMsg), CAPTURE_QUEUE_DEPTH);
 
-    // run core1 loop that processes and stores the samples
+    // run core1 loop that computes and stores the trajectories
     multicore_launch_core1_with_stack(core1_entry, core1_stack, sizeof(core1_stack));
 
     HttpRequest request(URL_REQUEST, HOST, PORT);
