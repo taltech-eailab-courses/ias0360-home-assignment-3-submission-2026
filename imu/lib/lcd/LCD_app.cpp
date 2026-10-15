@@ -71,30 +71,6 @@ static bool prevent_interaction(void)
     return (inference != NULL && (inference->state == PROCESSING || inference->state == SUCCESS));
 }
 
-
-void draw_ocr_prediction(void)
-{
-
-    // if (inference != NULL && inference->response != NULL) 
-    // {
-    //     GUI_DrawRectangle(OCR_RESULT_X0, OCR_RESULT_Y0,
-    //                     OCR_RESULT_X0 + BOX_W, OCR_RESULT_Y0 + 36,
-    //                     GREEN, DRAW_EMPTY, DOT_PIXEL_2X2);
-        
-    //     size_t response_length = strlen(inference->response);
-    //     size_t prefix_length = strlen("Predicted: ");
-    //     char* dynamic_display_str = (char*)malloc(response_length + prefix_length + 1);
-    //     if (dynamic_display_str != NULL) {
-    //         snprintf(dynamic_display_str, response_length + prefix_length + 1, "Predicted: %s", inference->response);
-    //         // GUI_DisString_EN(text_field->get_x() + 20, result_y0 + 8,
-    //         //                     dynamic_display_str, &Font20, WHITE, BLACK);
-    //         free(dynamic_display_str);
-    //     }
-    //     free(inference->response);
-    //     inference->response = NULL;
-    // }
-}
-
 void draw_initial_screen(void) {
     LCD_Clear(LCD_BACKGROUND);
     GUI_DisString_EN(80, 45, "Select Number of Letters", &Font20, WHITE, RED);

@@ -5,6 +5,8 @@
 #include <cstdint>
 #include "model_settings.h"
 
+// TODO: To test your entire pipeline, including data preprocessing, and model inference, replace the raw gesture data with your own test data.
+// Depending on your model settings, you may need to adjust the gesture data arrays accordingly.
 extern const int16_t gesture_data_0[GESTURE_DATA_IMU_AXIS][MAX_GESTURE_RAW_DATA_LEN];
 extern const int16_t gesture_data_1[GESTURE_DATA_IMU_AXIS][MAX_GESTURE_RAW_DATA_LEN];
 extern const int16_t gesture_data_2[GESTURE_DATA_IMU_AXIS][MAX_GESTURE_RAW_DATA_LEN];

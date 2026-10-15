@@ -54,57 +54,14 @@ void draw_ocr_prediction(void)
     }
 }
 
-static void apply_blur(const uint8_t* src,
-                       uint8_t* dst,
-                       const uint8_t* kernel)
-{
-    const int r = KERNEL_SIZE / 2;
-    uint8_t temp[DATA_SIZE_H][DATA_SIZE_W] = {0};
-
-    // Convolution-like accumulation (binary foreground)
-    for (int y = 0; y < DATA_SIZE_H; ++y) {
-        for (int x = 0; x < DATA_SIZE_W; ++x) {
-            if (src[(y + MARGIN) * BOX_W + (x + MARGIN)] == 0) continue;
-
-            for (int j = y - r; j <= y + r; ++j) {
-                if ((unsigned)j >= (unsigned)DATA_SIZE_H) continue;
-                int ky = j - (y - r);
-
-                for (int i = x - r; i <= x + r; ++i) {
-                    if ((unsigned)i >= (unsigned)DATA_SIZE_W) continue;
-                    int kx = i - (x - r);
-
-                    unsigned int sum = temp[j][i] + kernel[ky * KERNEL_SIZE + kx];
-                    temp[j][i] = (uint8_t)(sum > 255u ? 255u : sum);
-                }
-            }
-        }
-    }
-
-    // 2×2 average downsample
-    for (int j = 0; j < RESULT_H; ++j) {
-        for (int i = 0; i < RESULT_W; ++i) {
-            unsigned int s = 0;
-            s += temp[j * 2 + 0][i * 2 + 0];
-            s += temp[j * 2 + 0][i * 2 + 1];
-            s += temp[j * 2 + 1][i * 2 + 0];
-            s += temp[j * 2 + 1][i * 2 + 1];
-            s >>= 2;
-            if (s > 255u) s = 255u;
-            dst[j * RESULT_W + i] = (uint8_t)s;
-        }
-    }
-}
 
 void on_send_button_pressed(void)
 {
     if (prevent_interaction()) return;
-
-    // text_field->print_data();
+    // TODO: Apply any preprocessing steps to the input data before sending the HTTP request.
+    text_field->print_data();
     printf("start processing.\r\n");
-    apply_blur(text_field->data(), inference->data, sKernel);
-    printf("blur applied.\r\n");
-    TP_display_input(RESULT_H, RESULT_W, inference->data);
+
     // Trigger a http request
     multicore_fifo_push_blocking(OCR_MULTICORE_RUN_INFERENCE_FLAG);
 }

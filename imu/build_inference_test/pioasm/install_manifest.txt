@@ -1,5 +1,0 @@
-/root/submission/ias0360-home-assignment-3-submission-2026/imu/build_inference_test/pioasm-install/pioasm/pioasm
-/root/submission/ias0360-home-assignment-3-submission-2026/imu/build_inference_test/pioasm-install/pioasm/pioasmTargets.cmake
-/root/submission/ias0360-home-assignment-3-submission-2026/imu/build_inference_test/pioasm-install/pioasm/pioasmTargets-release.cmake
-/root/submission/ias0360-home-assignment-3-submission-2026/imu/build_inference_test/pioasm-install/pioasm/pioasmConfig.cmake
-/root/submission/ias0360-home-assignment-3-submission-2026/imu/build_inference_test/pioasm-install/pioasm/pioasmConfigVersion.cmake

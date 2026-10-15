@@ -1,6 +1,7 @@
 
 #include "gesture_data_preprocessed.h"
 
+// TODO: To test your model behaviour, replace the preprocessed gesture data with your own test data.
 extern const uint8_t gesture_data_preprocessed_0[GESTURE_DATA_IMU_AXIS][GESTURE_DATA_MAX_LEN] = {
     { // ax
         136, 136, 136, 136, 136, 136, 136, 136,

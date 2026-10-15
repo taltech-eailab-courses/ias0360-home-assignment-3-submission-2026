@@ -5,6 +5,8 @@
 #include <cstdint>
 #include "model_settings.h"
 
+// TODO: To test your model behaviour, replace the preprocessed gesture data with your own test data.
+// Depending on your model settings, you may need to adjust the gesture data arrays accordingly.
 extern const uint8_t gesture_data_preprocessed_0[GESTURE_DATA_IMU_AXIS][GESTURE_DATA_MAX_LEN];
 extern const uint8_t gesture_data_preprocessed_1[GESTURE_DATA_IMU_AXIS][GESTURE_DATA_MAX_LEN];
 extern const uint8_t gesture_data_preprocessed_2[GESTURE_DATA_IMU_AXIS][GESTURE_DATA_MAX_LEN];

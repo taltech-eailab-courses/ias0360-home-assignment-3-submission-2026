@@ -40,7 +40,7 @@ void TP_DrawPredictedResult(void)
                 sprintf(temp, "%d", inference->UserInputs[i].PredictedDigit);
             }
             strcat(result, temp);
-
+            printf("Predicted result for input %d: %s\n", i, result);
             GUI_DisString_EN(text_fields[i].get_x() + 2, text_fields[i].get_y() + BOX_SIZE + 12, result, &Font12, WHITE, BLACK);
         }
     }
@@ -69,63 +69,16 @@ void reset_user_input(UserInput_t* input, int index)
 }
 
 
-static void apply_blur(const uint8_t* src,
-                       uint8_t* dst,
-                       const uint8_t* kernel)
-{
-    const int r = KERNEL_SIZE / 2;
-    uint8_t temp[BOX_SIZE][BOX_SIZE] = {0};
-
-    // Convolution-like accumulation (binary foreground)
-    for (int y = 0; y < BOX_SIZE; ++y) {
-        for (int x = 0; x < BOX_SIZE; ++x) {
-            if (src[y * BOX_SIZE + x] == 0) continue;
-
-            for (int j = y - r; j <= y + r; ++j) {
-                if ((unsigned)j >= BOX_SIZE) continue;
-                int ky = j - (y - r);
-                for (int i = x - r; i <= x + r; ++i) {
-                    if ((unsigned)i >= BOX_SIZE) continue;
-                    int kx = i - (x - r);
-                    unsigned int sum = temp[j][i] + kernel[ky * KERNEL_SIZE + kx];
-                    temp[j][i] = (uint8_t)(sum > 255u ? 255u : sum);
-                }
-            }
-        }
-    }
-
-    // 3x3 average downsample → write into flat dst
-    for (int j = 0; j < INPUT_IMAGE_SIZE; ++j) {
-        for (int i = 0; i < INPUT_IMAGE_SIZE; ++i) {
-            unsigned int s = 0;
-            s += temp[j*3 + 0][i*3 + 0];
-            s += temp[j*3 + 0][i*3 + 1];
-            s += temp[j*3 + 1][i*3 + 0];
-            s += temp[j*3 + 1][i*3 + 1];
-            s += temp[j*3 + 1][i*3 + 2];
-            s += temp[j*3 + 2][i*3 + 0];
-            s += temp[j*3 + 2][i*3 + 1];
-            s += temp[j*3 + 2][i*3 + 2];
-            s /= 9;
-            if (s > 255u) s = 255u;
-            dst[j * INPUT_IMAGE_SIZE + i] = (uint8_t)s;
-        }
-    }
-}
-
 void on_login_button_pressed(void)
 {
     if (prevent_interaction()) return;
 
     printf("Start processing.\r\n");
-    
+    // TODO: Apply any preprocessing steps to the input data before sending the HTTP request.
     for (int i=0; i<DIGIT_INPUT_COUNT; i++) {
         printf("Input %d:\n", i);
-
-        // text_fields[i].print_data();
-        apply_blur(text_fields[i].data(), inference->UserInputs[i].InputData, sKernel);
-
-        printf("Blur applied for Input %d.\r\n", i);
+        text_fields[i].print_data();
+        
         TP_display_input(INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE, inference->UserInputs[i].InputData);
     }
 

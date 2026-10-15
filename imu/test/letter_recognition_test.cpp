@@ -26,15 +26,11 @@ extern "C" {
 // Included last: this header defines `true`/`false` as macros.
 #include "icm20948.h"
 
-#define SD_CARD_FILENAME "large_request_data_test.bin"
-#define REQUEST_CHUNK_SIZE 1024
-#define REQUEST_ID "251488IAXD"
+// TODO: REPLACE WITH YOUR STUDENT ID
+#define STUDENT_ID "<YOUR_STUDENT_ID>"
 #define NUM_CHARACTER 5
 
-// Recording, as in the data collection of lab_0_1.cpp / the notebook: the accelerometer is polled back to back
-// (about 2 kHz, imuDataAccGyrGet() = imuDataOnlyGet() of lab_0_1) into RAM. The first STATIONARY_US are taken
-// while the board is still and are the "stationary prefix" of the notebook. The trajectory is computed after the
-// character is finished, because the notebook's drift correction needs the whole recording.
+
 #define STATIONARY_US 200000       // stationary prefix (0.2 s in the notebook)
 #define PREPARE_SECONDS 2          // hold-still countdown before every character
 #define OUTPUT_RATE_HZ 100         // the stored / uploaded trajectory is decimated to about this rate
@@ -331,7 +327,7 @@ static void send_ocr_request(const AppCommand& cmd) {
     // One id per word: the server keeps every id's images and its final answer, so reusing an id gives a stale
     // result or "total_packets_mismatch". boot_tag keeps ids unique across reboots (session ids restart at 1).
     char request_id[40];
-    snprintf(request_id, sizeof request_id, "%s_%s_%lu", REQUEST_ID, boot_tag, (unsigned long)cmd.session_id);
+    snprintf(request_id, sizeof request_id, "%s_%s_%lu", STUDENT_ID, boot_tag, (unsigned long)cmd.session_id);
 
     std::string x, body;
     for (uint8_t i = 0; i < cmd.char_count; i++) {

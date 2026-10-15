@@ -135,7 +135,7 @@ static void core1_entry(void)
         printf("Received %u samples (%u dropped), using %u\n",
                (unsigned)received, (unsigned)dropped_samples, (unsigned)sample_count);
 
-        // normalize, pad/cut, downsample and quantize straight into the model's input tensor
+        // Apply preprocessing to the raw interleaved gesture data, and store the result in the model's input tensor
         if (!preprocessor.preprocess(raw_interleaved, sample_count, input_tensor,
                                      ml_model.input->params.scale,
                                      ml_model.input->params.zero_point)) {
@@ -144,6 +144,7 @@ static void core1_entry(void)
             continue;
         }
 
+        // Run machine learning model inference on the preprocessed IMU input
         absolute_time_t inference_start = get_absolute_time();
         int result = ml_model.predict();
         float inference_time_ms = absolute_time_diff_us(inference_start, get_absolute_time()) / 1000.0f;
@@ -205,6 +206,8 @@ int main(void)
 
         dropped_samples = 0;
         uint64_t start_time = time_us_64();
+
+        // Sample the IMU data for the duration of MAX_DATA_COLLECTION_TIME_US
         while (time_us_64() < start_time + MAX_DATA_COLLECTION_TIME_US) {
             imuDataAccGyrGet(&stGyroRawData, &stAccelRawData);
 
@@ -212,7 +215,8 @@ int main(void)
             s.ax = stAccelRawData.s16X;
             s.ay = stAccelRawData.s16Y;
             s.az = stAccelRawData.s16Z;
-
+            
+            // Once the sample is filled, try to add it to the queue.
             if (!queue_try_add(&sample_q, &s)) {
                 dropped_samples = dropped_samples + 1;
             }

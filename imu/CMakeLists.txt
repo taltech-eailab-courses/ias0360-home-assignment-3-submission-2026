@@ -88,9 +88,9 @@ foreach(var AW_SERVER_PORT AW_UPLOAD_RESAMPLE_POINTS AW_LPF_CUTOFF_HZ)
 endforeach()
 
 
-add_executable(main main.cpp) # main function to run.
 add_executable(gesture_recognition gesture_recognition.cpp) # to test hand written digit recognition with static test data.
 add_executable(letter_recognition letter_recognition.cpp) # to test hand written letter recognition with static test data.
+
 add_executable(tensor_arena_test test/arena_size_test.cpp) # to check arena size for a given model.
 add_executable(local_inference_test test/local_inference_test.cpp) # to test hand written digit recognition with static test data.
 add_executable(local_inference_raw_test test/local_inference_raw_test.cpp) # to test hand written digit recognition with static test data.
@@ -98,10 +98,6 @@ add_executable(gesture_recognition_test test/gesture_recognition_test.cpp) # to 
 add_executable(letter_recognition_test test/letter_recognition_test.cpp) # to test hand written letter recognition with static test data.
 
 
-target_include_directories(main
-    PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/.
-)
 target_include_directories(gesture_recognition
     PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/.
@@ -135,10 +131,6 @@ target_include_directories(letter_recognition_test
 )
 
 
-set_target_properties(main
-    PROPERTIES
-    COMPILE_FLAGS "-fno-rtti -fno-exceptions -fno-threadsafe-statics -nostdlib"
-)
 set_target_properties(gesture_recognition
     PROPERTIES
     COMPILE_FLAGS "-fno-rtti -fno-exceptions -fno-threadsafe-statics -nostdlib"
@@ -173,24 +165,6 @@ set_target_properties(letter_recognition_test
 pico_set_linker_script(gesture_recognition ${CMAKE_CURRENT_SOURCE_DIR}/ldscripts/gesture_recognition_memmap.ld)
 pico_set_linker_script(letter_recognition ${CMAKE_CURRENT_SOURCE_DIR}/ldscripts/letter_recognition_memmap.ld)
 
-target_link_libraries(main 
-    lcd 
-    font 
-    config
-    model
-    http_client
-    pico_stdlib 
-    hardware_spi 
-    hardware_pwm
-    pico_multicore 
-    hardware_adc
-    pico_cyw43_arch_lwip_threadsafe_background
-    pico_lwip_http
-    pico_lwip_mbedtls
-    pico_mbedtls
-    pico_lwip_sntp
-    pico-tflmicro
-)
 target_link_libraries(
     gesture_recognition
     lcd 
@@ -220,7 +194,11 @@ target_link_libraries(
     hardware_pwm 
     pico_multicore 
     hardware_adc
+    hardware_i2c
+    pico_util
+    icm20948
     sd_card_wrapper
+    position_estimator
     pico_cyw43_arch_lwip_threadsafe_background
     pico_lwip_http
     pico_lwip_mbedtls
@@ -320,14 +298,6 @@ target_link_libraries(
     pico_lwip_sntp
 )
 
-
-target_compile_options(main PRIVATE
-    $<$<COMPILE_LANGUAGE:CXX>:-fno-threadsafe-statics>
-)
-
-set_property(TARGET main APPEND_STRING PROPERTY LINK_FLAGS 
-    "-Wl,--print-memory-usage"
-)
 set_property(TARGET gesture_recognition APPEND_STRING PROPERTY LINK_FLAGS 
     "-Wl,--print-memory-usage"
 )
@@ -349,10 +319,6 @@ set_property(TARGET letter_recognition_test APPEND_STRING PROPERTY LINK_FLAGS
 set_property(TARGET gesture_recognition_test APPEND_STRING PROPERTY LINK_FLAGS 
     "-Wl,--print-memory-usage"
 )
-
-# enable usb output, disable uart output
-pico_enable_stdio_usb(main 1)
-pico_enable_stdio_uart(main 0)
 
 pico_enable_stdio_usb(gesture_recognition 1)
 pico_enable_stdio_uart(gesture_recognition 0)
@@ -390,8 +356,6 @@ pico_enable_stdio_uart(letter_recognition_test 0)
 
 
 # create map/bin/hex/uf2 file etc.
-pico_add_extra_outputs(main)
-
 pico_add_extra_outputs(gesture_recognition)
 
 pico_add_extra_outputs(letter_recognition)

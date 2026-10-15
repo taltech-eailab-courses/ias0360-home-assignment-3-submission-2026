@@ -1,7 +1,7 @@
 
 #include "gesture_data_raw.h"
 
-
+// TODO: To test your entire pipeline, including data preprocessing, and model inference, replace the raw gesture data with your own test data.
 const int16_t gesture_data_0[GESTURE_DATA_IMU_AXIS][MAX_GESTURE_RAW_DATA_LEN] = {
     { // ax
         -2, -1, 0, 1, 2, 4, 5, 7,
